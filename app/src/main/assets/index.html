@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#14121a">
+<title>MTG Card Scanner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#14121a;--panel:#1e1b27;--line:#332e40;--ink:#ece8f4;--mute:#9a93ab;--gold:#e8b44c;--orange:#ff6a1a;--green:#3ccf7a;--red:#ff5c5c}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 Inter,system-ui,sans-serif;overflow-x:clip}
+h1{font:700 22px/1.1 Cinzel,serif;margin:0;color:var(--gold);letter-spacing:.5px}
+header{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 14px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5}
+header .mode{font-size:12px;color:var(--mute);margin-left:auto}
+button,.btn{font:600 15px Inter,sans-serif;min-height:44px;padding:0 14px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none}
+button.primary{background:var(--orange);border-color:var(--orange);color:#fff}
+button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+button:disabled{opacity:.5}
+input,select{font:16px Inter,sans-serif;background:#0f0d14;color:var(--ink);border:1px solid var(--line);border-radius:10px;min-height:44px;padding:0 10px}
+main{max-width:1240px;margin:0 auto;padding:12px 14px 80px;display:grid;gap:16px}
+@media(min-width:960px){main{grid-template-columns:380px minmax(0,1fr);align-items:start}.scan{position:sticky;top:84px}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px}
+.cam{position:relative;aspect-ratio:3/4;background:#000;border-radius:10px;overflow:hidden}
+.cam video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.cam svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.cam .msg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:20px;color:var(--mute)}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
+.row>*{flex:1 1 auto}
+label.chk{display:flex;align-items:center;gap:8px;flex:0 0 auto;min-height:44px}
+label.chk input{width:22px;height:22px;min-height:0}
+#status{margin-top:10px;min-height:22px;color:var(--mute);font-size:14px}
+#status.err{color:var(--red)}#status.ok{color:var(--green)}
+#picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(105px,1fr));gap:8px;margin-top:10px}
+#picker button{flex-direction:column;height:auto;padding:6px;font-size:12px;font-weight:400;text-align:center;line-height:1.25}
+#picker img.c{width:100%;border-radius:6px;aspect-ratio:488/680;object-fit:cover;background:#000}
+img.si{width:18px;height:18px;filter:invert(1);vertical-align:-4px}
+.lists{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.lists #listName{flex:1 1 160px;font-weight:600}
+.scroll{overflow-x:auto;margin-top:10px;border-radius:10px;border:1px solid var(--line)}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap;text-align:right;vertical-align:middle}
+th{background:#262233;font-size:12px;color:var(--mute);font-weight:600;position:sticky;top:0}
+th.store{color:var(--ink)}
+td.l,th.l{text-align:left}
+td.name,th.name{position:sticky;left:0;background:var(--panel);z-index:1;text-align:left}
+th.name{background:#262233;z-index:2}
+td.name input{width:170px;min-height:36px;font-size:14px}
+td.qty input{width:52px;min-height:36px;text-align:center;font-size:15px}
+td.set small{color:var(--mute)}
+td a{color:var(--ink);text-decoration:none;border-bottom:1px dotted var(--mute)}
+td .out{opacity:.45;text-decoration:line-through}
+td small.st{color:var(--mute);margin-left:3px}
+td.act button{min-height:36px;padding:0 10px}
+tfoot td{font-weight:600;color:var(--gold)}
+.foil{color:var(--gold);font-size:12px}
+.empty{padding:28px;text-align:center;color:var(--mute)}
+.note{font-size:12px;color:var(--mute);margin-top:8px}
+#toast{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);background:#2b2638;border:1px solid var(--gold);border-radius:12px;padding:8px 10px;display:none;gap:8px;align-items:center;z-index:20;max-width:94vw;flex-wrap:wrap;box-shadow:0 8px 30px #0008}
+#toast.show{display:flex}
+#toast span{flex:1 1 180px}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid var(--mute);border-top-color:transparent;border-radius:50%;animation:s 1s linear infinite}
+@keyframes s{to{transform:rotate(1turn)}}
+@media(prefers-reduced-motion:reduce){.spin{animation:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1>MTG Card Scanner</h1>
+  <span class="mode" id="mode"></span>
+</header>
+<main>
+  <section class="panel scan">
+    <div class="cam" id="cam">
+      <video id="video" playsinline muted autoplay></video>
+      <svg id="overlay" preserveAspectRatio="none"></svg>
+      <div class="msg" id="camMsg">Hold the card upright so it fills the gold frame.<br>Tap “Start camera”.</div>
+    </div>
+    <div class="row">
+      <button id="camBtn">Start camera</button>
+      <button id="scanBtn" class="primary" disabled>Scan card</button>
+    </div>
+    <div class="row">
+      <label class="btn" for="photo">Use a photo</label>
+      <input type="file" id="photo" accept="image/*" capture="environment" hidden>
+      <label class="chk"><input type="checkbox" id="foil"> Foil</label>
+    </div>
+    <form class="row" id="searchForm">
+      <input id="searchIn" placeholder="Or type a card name" autocomplete="off">
+      <button type="submit" style="flex:0 0 auto">Find</button>
+    </form>
+    <div id="status"></div>
+    <div id="picker"></div>
+  </section>
+
+  <section class="panel">
+    <div class="lists">
+      <select id="listSel" aria-label="Spreadsheet"></select>
+      <input id="listName" aria-label="Spreadsheet name">
+      <button id="newList">New sheet</button>
+      <button id="delList">Delete sheet</button>
+    </div>
+    <div class="row">
+      <button id="refreshAll">Refresh all prices</button>
+      <button id="exportCsv">Export CSV</button>
+      <button id="copyCsv">Copy</button>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th class="name" rowspan="2">Name</th><th rowspan="2">Qty</th><th class="l" rowspan="2">Set</th>
+            <th class="store" colspan="2">TCGplayer (USD)</th><th class="store" colspan="2">401 Games (CAD)</th><th class="store" colspan="2">Face to Face (CAD)</th><th rowspan="2"></th></tr>
+          <tr><th>NM</th><th>PL</th><th>NM</th><th>PL</th><th>NM</th><th>PL</th></tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+        <tfoot id="tfoot"></tfoot>
+      </table>
+    </div>
+    <p class="note">Quantity goes up by one each time the same card (same printing, same foil) is scanned. Name and quantity are editable. 401 Games lists “SP” (slightly played), which is shown in the PL column. Tap a price to open that store's page. Small number in brackets = copies in stock.</p>
+  </section>
+</main>
+<div id="toast" role="status"><span id="toastMsg"></span><button id="undoBtn">Undo</button><button id="wrongBtn">Wrong card?</button></div>
+
+<script>
+{
+const $ = s => document.querySelector(s);
+const NATIVE = !!window.AndroidBridge;
+const TESS = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const enc = encodeURIComponent;
+const norm = s => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+const front = n => String(n||'').split(' // ')[0];
+const money = p => p == null || isNaN(p) ? '' : '$' + Number(p).toFixed(2);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+$('#mode').textContent = NATIVE ? 'App mode: all stores live' : 'Browser mode';
+
+/* ---------- HTTP: native bridge in the Android app, fetch in a browser ---------- */
+const pend = {}; let seq = 0;
+window.__nativeDone = (id, status, text) => { const p = pend[id]; if (p) { delete pend[id]; p(status, text); } };
+function http(url, {method='GET', body='', headers={}} = {}) {
+  if (NATIVE) return new Promise((res, rej) => {
+    const id = 'r' + (++seq);
+    const t = setTimeout(() => { delete pend[id]; rej(new Error('timeout')); }, 30000);
+    pend[id] = (st, text) => { clearTimeout(t); (st >= 200 && st < 300) ? res(text) : rej(new Error('HTTP ' + st)); };
+    window.AndroidBridge.request(id, method, url, body || '', JSON.stringify(headers));
+  });
+  return fetch(url, {method, body: body || undefined, headers}).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); });
+}
+const getJSON = (u, o) => http(u, o).then(t => JSON.parse(t));
+
+/* ---------- Scryfall (card + set identification) ---------- */
+let lastSf = 0;
+async function sf(path) {
+  const wait = lastSf + 110 - Date.now(); if (wait > 0) await sleep(wait); lastSf = Date.now();
+  const r = await fetch('https://api.scryfall.com' + path, {headers: {Accept: 'application/json'}});
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error('Scryfall ' + r.status);
+  return r.json();
+}
+let SETS = null;
+async function loadSets() {
+  if (SETS) return SETS;
+  try { const c = JSON.parse(localStorage.getItem('mtgscan.sets')); if (c && Date.now() - c.t < 7 * 864e5) return SETS = c.m; } catch (e) {}
+  const j = await sf('/sets'); const m = {};
+  for (const s of j.data) m[s.code] = {n: s.name, i: s.icon_svg_uri};
+  try { localStorage.setItem('mtgscan.sets', JSON.stringify({t: Date.now(), m})); } catch (e) {}
+  return SETS = m;
+}
+const setIcon = code => SETS && SETS[code] ? `<img class="si" alt="" src="${esc(SETS[code].i)}">` : '';
+
+/* ---------- storage ---------- */
+let DB;
+try { DB = JSON.parse(localStorage.getItem('mtgscan.v1')); } catch (e) {}
+if (!DB || !DB.lists || !DB.lists.length) DB = {cur: 'l1', lists: [{id: 'l1', name: 'My cards', rows: []}]};
+const save = () => { try { localStorage.setItem('mtgscan.v1', JSON.stringify(DB)); } catch (e) {} };
+const cur = () => DB.lists.find(l => l.id === DB.cur) || DB.lists[0];
+
+/* ---------- pricing ---------- */
+function condPrices(pj, url) {
+  const vs = pj.variants || [];
+  const pick = re => { const v = vs.find(v => re.test(String(v.option1 || v.title || '').trim())); return v ? {p: v.price / 100, a: !!v.available, q: v.inventory_quantity ?? null} : null; };
+  return {nm: pick(/^(nm|near mint)/i), pl: pick(/^(pl|lp|sp|lightly|slightly)/i), url};
+}
+function suggestUrl(host, q) { return `https://${host}/search/suggest.json?q=${enc(q)}&resources[type]=product&resources[limit]=10&resources[options][unavailable_products]=last`; }
+const prodList = j => (j && j.resources && j.resources.results && j.resources.results.products) || (Array.isArray(j) ? j : []);
+
+async function price401(r) {
+  const host = 'store.401games.ca', q = front(r.cardName), search = `https://${host}/search?q=${enc(q)}`;
+  const prods = prodList(await getJSON(suggestUrl(host, q)));
+  const foilOf = p => { const t = p.tags || []; if (t.includes('Foil or Non-Foil_Foil')) return true; if (t.includes('Foil or Non-Foil_Non-Foil')) return false; return /\(foil\)|\[foil\]/i.test(p.title); };
+  const c = prods.filter(p => norm(p.title).startsWith(norm(q)) && foilOf(p) === r.foil);
+  const hasTag = (p, t) => (p.tags || []).includes(t);
+  const pick = c.find(p => r.tcgId && hasTag(p, 'TCG_' + r.tcgId))
+    || c.find(p => (p.tags || []).some(t => t.startsWith('Set_') && norm(t.slice(4)) === norm(r.setName)))
+    || c.find(p => p.title.toUpperCase().includes('(' + r.set.toUpperCase() + ')'));
+  if (!pick) return {none: true, url: search};
+  const url = `https://${host}/products/${pick.handle}`;
+  return condPrices(await getJSON(url + '.js'), url);
+}
+async function priceF2F(r) {
+  const host = 'facetofacegames.com', q = front(r.cardName), search = `https://${host}/search?q=${enc(q)}`;
+  const prods = prodList(await getJSON(suggestUrl(host, q)));
+  const num = String(r.num).replace(/^0+(?=\d)/, '');
+  const c = prods.filter(p => norm(p.title).startsWith(norm(q)) && (/\[foil\]/i.test(p.title) === r.foil));
+  const hasNum = p => p.title.includes('[' + num + ']');
+  const hasSet = p => norm(p.title).includes(norm(r.setName));
+  const pick = c.find(p => hasNum(p) && hasSet(p)) || c.find(hasNum) || c.find(hasSet);
+  if (!pick) return {none: true, url: search};
+  const url = `https://${host}/products/${pick.handle}`;
+  return condPrices(await getJSON(url + '.js'), url);
+}
+async function priceTCG(r) {
+  const out = {nm: r.mkt != null ? {p: +r.mkt, a: true, q: null, mkt: true} : null, pl: null, url: r.tcgUrl || `https://www.tcgplayer.com/search/magic/product?q=${enc(front(r.cardName))}`};
+  if (!NATIVE || !r.tcgId) return out;
+  for (const [k, cond] of [['nm', 'Near Mint'], ['pl', 'Lightly Played']]) {
+    try {
+      const body = JSON.stringify({filters: {term: {sellerStatus: 'Live', channelId: 0, language: ['English'], condition: [cond], printing: [r.foil ? 'Foil' : 'Normal']}, range: {quantity: {gte: 1}}, exclude: {channelExclusion: 0}}, from: 0, size: 1, sort: {field: 'price+shipping', order: 'asc'}, context: {shippingCountry: 'US', cart: {}}, aggregations: ['listingType']});
+      const j = await getJSON(`https://mp-search-api.tcgplayer.com/v1/product/${r.tcgId}/listings`, {method: 'POST', body, headers: {'Content-Type': 'application/json', Referer: 'https://www.tcgplayer.com/'}});
+      const l = j.results && j.results[0] && j.results[0].results && j.results[0].results[0];
+      if (l && l.price != null) out[k] = {p: +l.price, a: true, q: l.quantity ?? null};
+    } catch (e) {}
+  }
+  return out;
+}
+const busy = new Set();
+async function refreshRow(r) {
+  busy.add(r.key); render();
+  const [t, a, f] = await Promise.allSettled([priceTCG(r), price401(r), priceF2F(r)]);
+  const fb = host => ({err: true, url: `https://${host}/search?q=${enc(front(r.cardName))}`});
+  r.prices = {tcg: t.value || {url: r.tcgUrl}, s401: a.value || fb('store.401games.ca'), f2f: f.value || fb('facetofacegames.com'), at: Date.now()};
+  busy.delete(r.key); save(); render();
+}
+
+/* ---------- table ---------- */
+function cell(pr, k) {
+  if (!pr) return '<td></td>';
+  const v = pr[k];
+  if (!v) { const label = pr.err ? 'open' : (pr.none ? 'none' : '—'); return `<td><a href="${esc(pr.url || '#')}" target="_blank" rel="noopener">${label}</a></td>`; }
+  const st = v.q != null ? `<small class="st">(${esc(v.q)})</small>` : (v.mkt ? '<small class="st">mkt</small>' : '');
+  return `<td><a class="${v.a ? '' : 'out'}" href="${esc(pr.url || '#')}" target="_blank" rel="noopener">${money(v.p)}</a>${st}</td>`;
+}
+function render() {
+  const L = cur();
+  $('#listSel').innerHTML = DB.lists.map(l => `<option value="${esc(l.id)}" ${l.id === L.id ? 'selected' : ''}>${esc(l.name)} (${l.rows.reduce((a, r) => a + (+r.qty || 0), 0)})</option>`).join('');
+  if (document.activeElement !== $('#listName')) $('#listName').value = L.name;
+  if (!L.rows.length) { $('#tbody').innerHTML = '<tr><td colspan="10" class="empty">No cards yet. Scan one to start this sheet.</td></tr>'; $('#tfoot').innerHTML = ''; return; }
+  $('#tbody').innerHTML = L.rows.map(r => {
+    const P = r.prices || {};
+    const loading = busy.has(r.key);
+    return `<tr data-k="${esc(r.key)}">
+      <td class="name"><input class="nameIn" value="${esc(r.name)}" aria-label="Card name"></td>
+      <td class="qty"><input class="qtyIn" type="number" min="0" inputmode="numeric" value="${esc(r.qty)}" aria-label="Quantity"></td>
+      <td class="l set" title="${esc(r.setName)}">${setIcon(r.set)} ${esc(r.set.toUpperCase())} <small>#${esc(r.num)}</small>${r.foil ? ' <span class="foil">foil</span>' : ''}</td>
+      ${loading && !r.prices ? '<td colspan="6" style="text-align:center"><span class="spin"></span> checking stores…</td>' :
+        cell(P.tcg, 'nm') + cell(P.tcg, 'pl') + cell(P.s401, 'nm') + cell(P.s401, 'pl') + cell(P.f2f, 'nm') + cell(P.f2f, 'pl')}
+      <td class="act"><button class="ref" aria-label="Refresh prices">${loading ? '<span class="spin"></span>' : '↻'}</button> <button class="del" aria-label="Delete row">✕</button></td></tr>`;
+  }).join('');
+  const tot = (s, k) => L.rows.reduce((a, r) => { const v = r.prices && r.prices[s] && r.prices[s][k]; return a + (v ? v.p * (+r.qty || 0) : 0); }, 0) || null;
+  const n = L.rows.reduce((a, r) => a + (+r.qty || 0), 0);
+  $('#tfoot').innerHTML = `<tr><td class="name">Total value</td><td>${n}</td><td></td>${['tcg', 's401', 'f2f'].map(s => `<td>${money(tot(s, 'nm'))}</td><td>${money(tot(s, 'pl'))}</td>`).join('')}<td></td></tr>`;
+}
+$('#tbody').addEventListener('change', e => {
+  const tr = e.target.closest('tr'); if (!tr) return; const r = cur().rows.find(x => x.key === tr.dataset.k); if (!r) return;
+  if (e.target.classList.contains('nameIn')) r.name = e.target.value.trim() || r.cardName;
+  if (e.target.classList.contains('qtyIn')) r.qty = Math.max(0, parseInt(e.target.value, 10) || 0);
+  save(); render();
+});
+let delArm = null;
+$('#tbody').addEventListener('click', e => {
+  const tr = e.target.closest('tr'); if (!tr) return; const L = cur(); const r = L.rows.find(x => x.key === tr.dataset.k); if (!r) return;
+  if (e.target.closest('.ref')) refreshRow(r);
+  if (e.target.closest('.del')) {
+    if (delArm === r.key) { L.rows = L.rows.filter(x => x !== r); delArm = null; save(); render(); }
+    else { delArm = r.key; e.target.closest('.del').textContent = 'Delete?'; setTimeout(() => { if (delArm === r.key) { delArm = null; render(); } }, 3000); }
+  }
+});
+
+/* ---------- sheets ---------- */
+$('#listSel').addEventListener('change', e => { DB.cur = e.target.value; save(); render(); });
+$('#listName').addEventListener('input', e => { cur().name = e.target.value; save(); });
+$('#listName').addEventListener('change', () => { if (!cur().name.trim()) cur().name = 'Untitled'; save(); render(); });
+$('#newList').addEventListener('click', () => { const id = 'l' + Date.now(); DB.lists.push({id, name: 'Sheet ' + (DB.lists.length + 1), rows: []}); DB.cur = id; save(); render(); $('#listName').focus(); $('#listName').select(); });
+let listArm = false;
+$('#delList').addEventListener('click', e => {
+  if (!listArm) { listArm = true; e.target.textContent = 'Tap again to delete'; setTimeout(() => { listArm = false; e.target.textContent = 'Delete sheet'; }, 3000); return; }
+  listArm = false; e.target.textContent = 'Delete sheet';
+  DB.lists = DB.lists.filter(l => l.id !== DB.cur);
+  if (!DB.lists.length) DB.lists.push({id: 'l1', name: 'My cards', rows: []});
+  DB.cur = DB.lists[0].id; save(); render();
+});
+$('#refreshAll').addEventListener('click', async e => {
+  e.target.disabled = true;
+  for (const r of cur().rows) { await refreshRow(r); await sleep(250); }
+  e.target.disabled = false;
+});
+
+/* ---------- CSV ---------- */
+function csv() {
+  const q = v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const g = (r, s, k) => { const v = r.prices && r.prices[s] && r.prices[s][k]; return v ? v.p.toFixed(2) : ''; };
+  const head = ['Name', 'Quantity', 'Set', 'Set code', 'Number', 'Foil', 'TCGplayer NM (USD)', 'TCGplayer PL (USD)', '401 Games NM (CAD)', '401 Games PL (CAD)', 'Face to Face NM (CAD)', 'Face to Face PL (CAD)'];
+  return [head, ...cur().rows.map(r => [r.name, r.qty, r.setName, r.set.toUpperCase(), r.num, r.foil ? 'Yes' : 'No', g(r, 'tcg', 'nm'), g(r, 'tcg', 'pl'), g(r, 's401', 'nm'), g(r, 's401', 'pl'), g(r, 'f2f', 'nm'), g(r, 'f2f', 'pl')])].map(row => row.map(q).join(',')).join('\n');
+}
+$('#exportCsv').addEventListener('click', () => {
+  const name = (cur().name || 'cards').replace(/[^\w\- ]+/g, '').trim() + '.csv';
+  if (NATIVE) { status('Saved to ' + window.AndroidBridge.saveFile(name, csv()), 'ok'); return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv()], {type: 'text/csv'})); a.download = name; a.click();
+});
+$('#copyCsv').addEventListener('click', async () => { try { await navigator.clipboard.writeText(csv()); status('Copied — paste into Excel or Google Sheets.', 'ok'); } catch (e) { status('Copy was blocked by the browser.', 'err'); } });
+
+/* ---------- status / toast ---------- */
+function status(msg, cls = '') { const s = $('#status'); s.textContent = msg; s.className = cls; }
+let lastAdd = null, toastT;
+function toast(msg) { $('#toastMsg').textContent = msg; $('#toast').classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => $('#toast').classList.remove('show'), 7000); }
+function undoLast() {
+  if (!lastAdd) return; const L = DB.lists.find(l => l.id === lastAdd.list); if (!L) return;
+  const r = L.rows.find(x => x.key === lastAdd.key);
+  if (r) { if (lastAdd.wasNew) L.rows = L.rows.filter(x => x !== r); else r.qty = Math.max(0, r.qty - 1); }
+  save(); render();
+}
+$('#undoBtn').addEventListener('click', () => { undoLast(); lastAdd = null; $('#toast').classList.remove('show'); status('Undone.'); });
+$('#wrongBtn').addEventListener('click', async () => {
+  if (!lastAdd) return; const name = lastAdd.cardName; undoLast(); lastAdd = null; $('#toast').classList.remove('show');
+  await showPrintings(name, null, 'Pick the printing that matches the set symbol on your card:');
+});
+
+/* ---------- adding cards ---------- */
+function fromCard(c, foil) {
+  const face = (c.card_faces && c.card_faces[0]) || {};
+  const img = (c.image_uris || face.image_uris || {});
+  return {key: c.id + (foil ? '|f' : '|n'), id: c.id, name: c.name, cardName: c.name, set: c.set, setName: c.set_name, num: c.collector_number, foil,
+    qty: 1, tcgId: c.tcgplayer_id || c.tcgplayer_etched_id || null, img: img.small || '', tcgUrl: (c.purchase_uris || {}).tcgplayer || '',
+    mkt: foil ? (c.prices.usd_foil || c.prices.usd_etched) : c.prices.usd, prices: null};
+}
+function addCard(c) {
+  const foil = $('#foil').checked, L = cur(), row = fromCard(c, foil);
+  const ex = L.rows.find(r => r.key === row.key);
+  if (ex) ex.qty = (+ex.qty || 0) + 1; else L.rows.unshift(row);
+  lastAdd = {list: L.id, key: row.key, wasNew: !ex, cardName: c.name};
+  save(); render(); $('#picker').innerHTML = '';
+  status(`Added ${c.name} — ${c.set_name} #${c.collector_number}${foil ? ' (foil)' : ''}`, 'ok');
+  toast(`${ex ? 'Qty +1: ' : 'Added: '}${c.name} (${c.set.toUpperCase()} #${c.collector_number})`);
+  refreshRow(ex || row);
+}
+let pickList = [];
+async function showPrintings(name, hintNum, msg) {
+  status('Finding printings of ' + name + '…');
+  const j = await sf(`/cards/search?q=${enc('!"' + name + '"')}&unique=prints&order=released&dir=desc`);
+  pickList = (j && j.data) || [];
+  if (!pickList.length) { status('No printings found for “' + name + '”.', 'err'); return; }
+  if (hintNum) pickList.sort((a, b) => (b.collector_number === hintNum) - (a.collector_number === hintNum));
+  await loadSets().catch(() => {});
+  $('#picker').innerHTML = pickList.map((c, i) => {
+    const img = (c.image_uris || (c.card_faces && c.card_faces[0].image_uris) || {}).small || '';
+    return `<button data-i="${i}"><img class="c" loading="lazy" alt="" src="${esc(img)}"><span>${setIcon(c.set)} ${esc(c.set.toUpperCase())} #${esc(c.collector_number)}</span><span>${esc(c.set_name)}</span></button>`;
+  }).join('');
+  status(msg || `${pickList.length} printings — tap the one whose set symbol matches your card.`);
+}
+$('#picker').addEventListener('click', e => { const b = e.target.closest('button[data-i]'); if (b) addCard(pickList[+b.dataset.i]); });
+$('#searchForm').addEventListener('submit', async e => {
+  e.preventDefault(); const q = $('#searchIn').value.trim(); if (!q) return;
+  try { const c = await sf('/cards/named?fuzzy=' + enc(q)); if (!c) { status('No card matches “' + q + '”.', 'err'); return; } await showPrintings(c.name); }
+  catch (err) { status('Search failed: ' + err.message, 'err'); }
+});
+
+/* ---------- OCR + identification ---------- */
+let worker = null;
+function loadScript(src) { return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('could not load ' + src)); document.head.appendChild(s); }); }
+async function ocr() {
+  if (worker) return worker;
+  status('Loading the text reader (first time only, ~10 s)…');
+  await loadScript(TESS);
+  worker = await Tesseract.createWorker('eng');
+  return worker;
+}
+function region(src, x0, y0, x1, y1, outW) {
+  const sw = src.width * (x1 - x0), sh = src.height * (y1 - y0), k = outW / sw;
+  const c = document.createElement('canvas'); c.width = Math.round(outW); c.height = Math.round(sh * k);
+  const g = c.getContext('2d', {willReadFrequently: true});
+  g.drawImage(src, src.width * x0, src.height * y0, sw, sh, 0, 0, c.width, c.height);
+  const d = g.getImageData(0, 0, c.width, c.height), p = d.data; let lo = 255, hi = 0, sum = 0;
+  for (let i = 0; i < p.length; i += 4) { const y = 0.299 * p[i] + 0.587 * p[i + 1] + 0.114 * p[i + 2]; p[i] = y; if (y < lo) lo = y; if (y > hi) hi = y; sum += y; }
+  const inv = sum / (p.length / 4) < 120, span = Math.max(1, hi - lo);
+  for (let i = 0; i < p.length; i += 4) { let y = (p[i] - lo) * 255 / span; if (inv) y = 255 - y; p[i] = p[i + 1] = p[i + 2] = y; }
+  g.putImageData(d, 0, 0); return c;
+}
+const STOP = new Set(['EN', 'TM', 'CBS', 'THE', 'AND', 'LLC', 'INC', 'WIZARDS', 'COAST']);
+function parseBottom(t) {
+  const T = String(t).toUpperCase().replace(/[•·*°«»|]/g, ' ');
+  const nums = [...new Set([...T.matchAll(/(?:^|[^A-Z0-9])(\d{1,4})(?=\s*\/\s*\d|[^0-9]|$)/g)].map(m => String(parseInt(m[1], 10))))].filter(n => n !== '0' && !/^20\d\d$/.test(n));
+  let codes = [...T.matchAll(/\b([A-Z0-9]{3,5})\b/g)].map(m => m[1]).filter(x => /[A-Z]/.test(x) && !STOP.has(x));
+  const more = [];
+  for (const c of codes) { if (c.length === 5 && c.endsWith('EN')) more.push(c.slice(0, 3)); if (c.includes('0')) more.push(c.replace(/0/g, 'O')); if (c.includes('O')) more.push(c.replace(/O/g, '0')); }
+  codes = [...new Set([...codes, ...more])].map(c => c.toLowerCase());
+  if (SETS) codes = codes.filter(c => SETS[c]);
+  return {nums, codes};
+}
+function sim(a, b) {
+  a = norm(a); b = norm(b); if (!a || !b) return 0; if (a === b) return 1;
+  const bg = s => { const m = new Map(); for (let i = 0; i < s.length - 1; i++) { const k = s.slice(i, i + 2); m.set(k, (m.get(k) || 0) + 1); } return m; };
+  const A = bg(a), B = bg(b); let n = 0; for (const [k, v] of A) n += Math.min(v, B.get(k) || 0);
+  return 2 * n / (Math.max(1, a.length - 1) + Math.max(1, b.length - 1));
+}
+async function identify(card) {
+  $('#picker').innerHTML = '';
+  try {
+    await loadSets().catch(() => {});
+    const W = await ocr();
+    status('Reading card…');
+    await W.setParameters({tessedit_pageseg_mode: '7'});
+    const nameTxt = (await W.recognize(region(card, 0.05, 0.03, 0.80, 0.105, 900))).data.text.split('\n')[0].replace(/[^A-Za-z ,'\-]/g, ' ').replace(/\s+/g, ' ').trim();
+    await W.setParameters({tessedit_pageseg_mode: '6'});
+    const botTxt = (await W.recognize(region(card, 0.02, 0.875, 0.62, 0.985, 1000))).data.text;
+    const {nums, codes} = parseBottom(botTxt);
+    status(`Read: “${nameTxt || '?'}” · ${codes.map(c => c.toUpperCase()).join('/') || 'no set code'} ${nums.join('/') || ''}`);
+    let tries = 0;
+    for (const code of codes) for (const n of nums) {
+      if (++tries > 8) break;
+      const c = await sf(`/cards/${code}/${n}`);
+      if (c && (nameTxt.length < 4 || sim(front(c.name), nameTxt) > 0.4 || sim(c.name, nameTxt) > 0.4)) { addCard(c); return; }
+    }
+    if (nameTxt.length >= 3) {
+      const c = await sf('/cards/named?fuzzy=' + enc(nameTxt));
+      if (c) { await showPrintings(c.name, nums[0], `Found ${c.name}, but couldn't read the set — tap the printing whose set symbol matches your card:`); return; }
+    }
+    status('Couldn’t read this card. Try brighter light, hold it flat and fill the frame — or type the name above.', 'err');
+  } catch (e) { status('Scan failed: ' + e.message, 'err'); }
+}
+
+/* ---------- camera ---------- */
+const video = $('#video'), overlay = $('#overlay');
+let stream = null;
+function guide() {
+  const vw = video.videoWidth, vh = video.videoHeight, box = $('#cam').getBoundingClientRect();
+  const bA = box.width / box.height, vA = vw / vh;
+  let vx = 0, vy = 0, sw = vw, sh = vh;
+  if (vA > bA) { sw = vh * bA; vx = (vw - sw) / 2; } else { sh = vw / bA; vy = (vh - sh) / 2; }
+  let h = sh * 0.86, w = h * 63 / 88; if (w > sw * 0.9) { w = sw * 0.9; h = w * 88 / 63; }
+  return {view: [vx, vy, sw, sh], x: vx + (sw - w) / 2, y: vy + (sh - h) / 2, w, h};
+}
+function drawGuide() {
+  if (!video.videoWidth) return;
+  const g = guide(), [vx, vy, sw, sh] = g.view;
+  overlay.setAttribute('viewBox', `${vx} ${vy} ${sw} ${sh}`);
+  const r = g.w * 0.045;
+  overlay.innerHTML = `<path fill="rgba(0,0,0,.45)" fill-rule="evenodd" d="M${vx} ${vy}h${sw}v${sh}h${-sw}z M${g.x + r} ${g.y}h${g.w - 2 * r}a${r} ${r} 0 0 1 ${r} ${r}v${g.h - 2 * r}a${r} ${r} 0 0 1 ${-r} ${r}h${-(g.w - 2 * r)}a${r} ${r} 0 0 1 ${-r} ${-r}v${-(g.h - 2 * r)}a${r} ${r} 0 0 1 ${r} ${-r}z"/>
+    <rect x="${g.x}" y="${g.y}" width="${g.w}" height="${g.h}" rx="${r}" fill="none" stroke="#e8b44c" stroke-width="${sw / 160}"/>
+    <rect x="${g.x}" y="${g.y + g.h * 0.03}" width="${g.w * 0.8}" height="${g.h * 0.075}" fill="none" stroke="#e8b44c" stroke-opacity=".5" stroke-dasharray="8 6" stroke-width="${sw / 300}"/>
+    <rect x="${g.x}" y="${g.y + g.h * 0.875}" width="${g.w * 0.62}" height="${g.h * 0.11}" fill="none" stroke="#e8b44c" stroke-opacity=".5" stroke-dasharray="8 6" stroke-width="${sw / 300}"/>`;
+}
+const camRO = new ResizeObserver(drawGuide); camRO.observe($('#cam'));
+video.addEventListener('loadedmetadata', drawGuide);
+$('#camBtn').addEventListener('click', async () => {
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; video.srcObject = null; overlay.innerHTML = ''; $('#camMsg').hidden = false; $('#camBtn').textContent = 'Start camera'; $('#scanBtn').disabled = true; return; }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({audio: false, video: {facingMode: {ideal: 'environment'}, width: {ideal: 1920}, height: {ideal: 1080}}});
+    video.srcObject = stream; await video.play();
+    $('#camMsg').hidden = true; $('#camBtn').textContent = 'Stop camera'; $('#scanBtn').disabled = false;
+    ocr().then(() => status('Ready — line the card up with the frame and tap Scan.')).catch(() => {});
+  } catch (e) { status('Camera unavailable (' + e.name + '). Use “Use a photo” instead.', 'err'); }
+});
+$('#scanBtn').addEventListener('click', async () => {
+  if (!video.videoWidth) return;
+  $('#scanBtn').disabled = true;
+  const g = guide(), c = document.createElement('canvas'); c.width = Math.round(g.w); c.height = Math.round(g.h);
+  c.getContext('2d').drawImage(video, g.x, g.y, g.w, g.h, 0, 0, c.width, c.height);
+  await identify(c);
+  $('#scanBtn').disabled = false;
+});
+$('#photo').addEventListener('change', async e => {
+  const f = e.target.files && e.target.files[0]; if (!f) return;
+  const img = new Image(); img.src = URL.createObjectURL(f); await img.decode();
+  const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight; c.getContext('2d').drawImage(img, 0, 0);
+  e.target.value = '';
+  await identify(c);
+});
+
+window.__test = {parseBottom, sim, condPrices, fromCard, DB, render, save, setSets: m => { SETS = m; }};
+render();
+}
+</script>
+</body>
+</html>
