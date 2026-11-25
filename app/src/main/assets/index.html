@@ -110,14 +110,14 @@ tfoot td{font-weight:600;color:var(--gold)}
       <table>
         <thead>
           <tr><th class="name" rowspan="2">Name</th><th rowspan="2">Qty</th><th class="l" rowspan="2">Set</th>
-            <th class="store" colspan="2">TCGplayer (USD)</th><th class="store" colspan="2">401 Games (CAD)</th><th class="store" colspan="2">Face to Face (CAD)</th><th rowspan="2"></th></tr>
-          <tr><th>NM</th><th>PL</th><th>NM</th><th>PL</th><th>NM</th><th>PL</th></tr>
+            <th class="store" colspan="2">TCGplayer (USD)</th><th class="store" colspan="2">401 Games (CAD)</th><th class="store" colspan="2">Face to Face (CAD)</th><th class="store" colspan="2">Scryfall</th><th rowspan="2"></th></tr>
+          <tr><th>NM</th><th>PL</th><th>NM</th><th>PL</th><th>NM</th><th>PL</th><th>USD</th><th>EUR</th></tr>
         </thead>
         <tbody id="tbody"></tbody>
         <tfoot id="tfoot"></tfoot>
       </table>
     </div>
-    <p class="note">Quantity goes up by one each time the same card (same printing, same foil) is scanned. Name and quantity are editable. 401 Games lists “SP” (slightly played), which is shown in the PL column. Tap a price to open that store's page. Small number in brackets = copies in stock.</p>
+    <p class="note">Quantity goes up by one each time the same card (same printing, same foil) is scanned. Name and quantity are editable. 401 Games lists “SP” (slightly played), which is shown in the PL column. Tap a price to open that store's page. Small number in brackets = copies in stock. Scryfall shows one average price per card (USD from TCGplayer, EUR from Cardmarket), not separate conditions.</p>
   </section>
 </main>
 <div id="toast" role="status"><span id="toastMsg"></span><button id="undoBtn">Undo</button><button id="wrongBtn">Wrong card?</button></div>
@@ -223,12 +223,22 @@ async function priceTCG(r) {
   }
   return out;
 }
+async function priceSF(r) {
+  const c = await sf('/cards/' + r.id);
+  if (!c) throw new Error('not found');
+  const P = c.prices || {};
+  const usd = r.foil ? (P.usd_foil || P.usd_etched) : P.usd, eur = r.foil ? (P.eur_foil || P.eur_etched) : P.eur;
+  r.mkt = usd;
+  const v = x => x != null ? {p: +x, a: true, q: null} : null;
+  return {usd: v(usd), eur: v(eur), url: c.scryfall_uri};
+}
 const busy = new Set();
 async function refreshRow(r) {
   busy.add(r.key); render();
+  let s = null; try { s = await priceSF(r); } catch (e) {}
   const [t, a, f] = await Promise.allSettled([priceTCG(r), price401(r), priceF2F(r)]);
   const fb = host => ({err: true, url: `https://${host}/search?q=${enc(front(r.cardName))}`});
-  r.prices = {tcg: t.value || {url: r.tcgUrl}, s401: a.value || fb('store.401games.ca'), f2f: f.value || fb('facetofacegames.com'), at: Date.now()};
+  r.prices = {tcg: t.value || {url: r.tcgUrl}, s401: a.value || fb('store.401games.ca'), f2f: f.value || fb('facetofacegames.com'), sf: s || {err: true, url: `https://scryfall.com/search?q=${enc('!"' + r.cardName + '"')}`}, at: Date.now()};
   busy.delete(r.key); save(); render();
 }
 
@@ -244,7 +254,7 @@ function render() {
   const L = cur();
   $('#listSel').innerHTML = DB.lists.map(l => `<option value="${esc(l.id)}" ${l.id === L.id ? 'selected' : ''}>${esc(l.name)} (${l.rows.reduce((a, r) => a + (+r.qty || 0), 0)})</option>`).join('');
   if (document.activeElement !== $('#listName')) $('#listName').value = L.name;
-  if (!L.rows.length) { $('#tbody').innerHTML = '<tr><td colspan="10" class="empty">No cards yet. Scan one to start this sheet.</td></tr>'; $('#tfoot').innerHTML = ''; return; }
+  if (!L.rows.length) { $('#tbody').innerHTML = '<tr><td colspan="12" class="empty">No cards yet. Scan one to start this sheet.</td></tr>'; $('#tfoot').innerHTML = ''; return; }
   $('#tbody').innerHTML = L.rows.map(r => {
     const P = r.prices || {};
     const loading = busy.has(r.key);
@@ -252,13 +262,13 @@ function render() {
       <td class="name"><input class="nameIn" value="${esc(r.name)}" aria-label="Card name"></td>
       <td class="qty"><input class="qtyIn" type="number" min="0" inputmode="numeric" value="${esc(r.qty)}" aria-label="Quantity"></td>
       <td class="l set" title="${esc(r.setName)}">${setIcon(r.set)} ${esc(r.set.toUpperCase())} <small>#${esc(r.num)}</small>${r.foil ? ' <span class="foil">foil</span>' : ''}</td>
-      ${loading && !r.prices ? '<td colspan="6" style="text-align:center"><span class="spin"></span> checking stores…</td>' :
-        cell(P.tcg, 'nm') + cell(P.tcg, 'pl') + cell(P.s401, 'nm') + cell(P.s401, 'pl') + cell(P.f2f, 'nm') + cell(P.f2f, 'pl')}
+      ${loading && !r.prices ? '<td colspan="8" style="text-align:center"><span class="spin"></span> checking stores…</td>' :
+        cell(P.tcg, 'nm') + cell(P.tcg, 'pl') + cell(P.s401, 'nm') + cell(P.s401, 'pl') + cell(P.f2f, 'nm') + cell(P.f2f, 'pl') + cell(P.sf, 'usd') + cell(P.sf, 'eur')}
       <td class="act"><button class="ref" aria-label="Refresh prices">${loading ? '<span class="spin"></span>' : '↻'}</button> <button class="del" aria-label="Delete row">✕</button></td></tr>`;
   }).join('');
   const tot = (s, k) => L.rows.reduce((a, r) => { const v = r.prices && r.prices[s] && r.prices[s][k]; return a + (v ? v.p * (+r.qty || 0) : 0); }, 0) || null;
   const n = L.rows.reduce((a, r) => a + (+r.qty || 0), 0);
-  $('#tfoot').innerHTML = `<tr><td class="name">Total value</td><td>${n}</td><td></td>${['tcg', 's401', 'f2f'].map(s => `<td>${money(tot(s, 'nm'))}</td><td>${money(tot(s, 'pl'))}</td>`).join('')}<td></td></tr>`;
+  $('#tfoot').innerHTML = `<tr><td class="name">Total value</td><td>${n}</td><td></td>${['tcg', 's401', 'f2f'].map(s => `<td>${money(tot(s, 'nm'))}</td><td>${money(tot(s, 'pl'))}</td>`).join('')}<td>${money(tot('sf', 'usd'))}</td><td>${money(tot('sf', 'eur'))}</td><td></td></tr>`;
 }
 $('#tbody').addEventListener('change', e => {
   const tr = e.target.closest('tr'); if (!tr) return; const r = cur().rows.find(x => x.key === tr.dataset.k); if (!r) return;
@@ -299,8 +309,8 @@ $('#refreshAll').addEventListener('click', async e => {
 function csv() {
   const q = v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
   const g = (r, s, k) => { const v = r.prices && r.prices[s] && r.prices[s][k]; return v ? v.p.toFixed(2) : ''; };
-  const head = ['Name', 'Quantity', 'Set', 'Set code', 'Number', 'Foil', 'TCGplayer NM (USD)', 'TCGplayer PL (USD)', '401 Games NM (CAD)', '401 Games PL (CAD)', 'Face to Face NM (CAD)', 'Face to Face PL (CAD)'];
-  return [head, ...cur().rows.map(r => [r.name, r.qty, r.setName, r.set.toUpperCase(), r.num, r.foil ? 'Yes' : 'No', g(r, 'tcg', 'nm'), g(r, 'tcg', 'pl'), g(r, 's401', 'nm'), g(r, 's401', 'pl'), g(r, 'f2f', 'nm'), g(r, 'f2f', 'pl')])].map(row => row.map(q).join(',')).join('\n');
+  const head = ['Name', 'Quantity', 'Set', 'Set code', 'Number', 'Foil', 'TCGplayer NM (USD)', 'TCGplayer PL (USD)', '401 Games NM (CAD)', '401 Games PL (CAD)', 'Face to Face NM (CAD)', 'Face to Face PL (CAD)', 'Scryfall USD', 'Scryfall EUR'];
+  return [head, ...cur().rows.map(r => [r.name, r.qty, r.setName, r.set.toUpperCase(), r.num, r.foil ? 'Yes' : 'No', g(r, 'tcg', 'nm'), g(r, 'tcg', 'pl'), g(r, 's401', 'nm'), g(r, 's401', 'pl'), g(r, 'f2f', 'nm'), g(r, 'f2f', 'pl'), g(r, 'sf', 'usd'), g(r, 'sf', 'eur')])].map(row => row.map(q).join(',')).join('\n');
 }
 $('#exportCsv').addEventListener('click', () => {
   const name = (cur().name || 'cards').replace(/[^\w\- ]+/g, '').trim() + '.csv';
